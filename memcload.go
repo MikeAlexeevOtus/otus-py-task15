@@ -7,64 +7,100 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	//"google.golang.org/protobuf"
+	"strconv"
+	"strings"
+	//"github.com/golang/protobuf/proto"
 	//"github.com/bradfitz/gomemcache/memcache"
 )
 
-func process_one_file(files_chan chan string, done_chan chan bool) {
+type ParsedLine struct {
+	dev_type string
+	dev_id   string
+	lat      float64
+	lon      float64
+	apps     []int
+}
+
+func parse_line(line string) ParsedLine {
+	var parsed ParsedLine
+	var err error
+	words := strings.Fields(line)
+	parsed.dev_type = words[0]
+	parsed.dev_id = words[1]
+	parsed.lat, err = strconv.ParseFloat(words[2], 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	parsed.lon, err = strconv.ParseFloat(words[3], 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	raw_apps := strings.Split(words[4], ",")
+	for _, s := range raw_apps {
+		app, err := strconv.Atoi(s)
+		if err != nil {
+			log.Fatal(err)
+		}
+		parsed.apps = append(parsed.apps, app)
+	}
+	return parsed
+}
+
+func upload_message(lines_chan chan string, done_chan chan bool) {
 	for {
-		filepath, ok := <-files_chan
-		fmt.Println("in goroutine: " + filepath)
+		line, ok := <-lines_chan
 		if !ok {
-			fmt.Println("closed")
+			fmt.Println("message chan closed")
 			done_chan <- true
 			return
 		}
-		fmt.Printf("in goroutine %s\n", filepath)
+		fmt.Print("message: ")
+		fmt.Println(parse_line(line))
+	}
+}
 
-		f, err := os.Open(filepath)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer f.Close()
+func process_one_file(filepath string, lines_chan chan string) {
+	f, err := os.Open(filepath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
 
-		gr, err := gzip.NewReader(f)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer gr.Close()
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer gr.Close()
 
-		fmt.Println("hey")
-		scanner := bufio.NewScanner(gr)
-		fmt.Println(scanner)
-		//line := 1
-		for scanner.Scan() {
-			fmt.Println(scanner.Text())
-		}
+	scanner := bufio.NewScanner(gr)
+	for scanner.Scan() {
+		lines_chan <- scanner.Text()
+		break
+	}
 
-		if err := scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
-
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
 	}
 }
 
 func main() {
 	// mc_connections =
-	files_chan := make(chan string)
 	done_chan := make(chan bool)
+	lines_chan := make(chan string)
 	for i := 0; i < 4; i++ {
-		go process_one_file(files_chan, done_chan)
 	}
 	files, err := filepath.Glob("../data/*.gz")
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(files)
-	for _, filepath := range files {
-		files_chan <- filepath
+	for i := 0; i < 4; i++ {
+		go upload_message(lines_chan, done_chan)
 	}
-	close(files_chan)
+	for _, filepath := range files {
+		process_one_file(filepath, lines_chan)
+	}
+	close(lines_chan)
 	for i := 0; i < 4; i++ {
 		<-done_chan
 	}
