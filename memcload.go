@@ -47,20 +47,20 @@ func parse_line(line string) ParsedLine {
 	return parsed
 }
 
-func upload_message(lines_chan chan string, done_chan chan bool) {
+func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
 	for {
-		line, ok := <-lines_chan
+		parsed_line, ok := <-data_chan
 		if !ok {
-			fmt.Println("message chan closed")
+			fmt.Println("data chan closed")
 			done_chan <- true
 			return
 		}
 		fmt.Print("message: ")
-		fmt.Println(parse_line(line))
+		fmt.Println(parsed_line)
 	}
 }
 
-func process_one_file(filepath string, lines_chan chan string) {
+func process_one_file(filepath string, data_chan chan ParsedLine) {
 	f, err := os.Open(filepath)
 	if err != nil {
 		log.Fatal(err)
@@ -75,7 +75,8 @@ func process_one_file(filepath string, lines_chan chan string) {
 
 	scanner := bufio.NewScanner(gr)
 	for scanner.Scan() {
-		lines_chan <- scanner.Text()
+		line := scanner.Text()
+		data_chan <- parse_line(line)
 		break
 	}
 
@@ -87,7 +88,7 @@ func process_one_file(filepath string, lines_chan chan string) {
 func main() {
 	// mc_connections =
 	done_chan := make(chan bool)
-	lines_chan := make(chan string)
+	data_chan := make(chan ParsedLine)
 	for i := 0; i < 4; i++ {
 	}
 	files, err := filepath.Glob("../data/*.gz")
@@ -95,12 +96,12 @@ func main() {
 		log.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
-		go upload_message(lines_chan, done_chan)
+		go upload_message(data_chan, done_chan)
 	}
 	for _, filepath := range files {
-		process_one_file(filepath, lines_chan)
+		process_one_file(filepath, data_chan)
 	}
-	close(lines_chan)
+	close(data_chan)
 	for i := 0; i < 4; i++ {
 		<-done_chan
 	}
