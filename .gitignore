@@ -1,0 +1,9 @@
+*.todo
+*.pyc
+*.todo
+.*.sw?
+tags
+.venv
+data
+build
+go.sum
