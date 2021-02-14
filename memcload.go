@@ -18,7 +18,15 @@ type ParsedLine struct {
 	dev_id   string
 	lat      float64
 	lon      float64
-	apps     []int
+	apps     []uint32
+}
+
+func make_protobuf_struct(parsed_line ParsedLine) UserApps {
+	var ua UserApps
+	ua.Lat = &parsed_line.lat
+	ua.Lon = &parsed_line.lon
+	ua.Apps = parsed_line.apps
+	return ua
 }
 
 func parse_line(line string) ParsedLine {
@@ -38,16 +46,17 @@ func parse_line(line string) ParsedLine {
 
 	raw_apps := strings.Split(words[4], ",")
 	for _, s := range raw_apps {
-		app, err := strconv.Atoi(s)
+		app, err := strconv.ParseUint(s, 10, 32)
 		if err != nil {
 			log.Fatal(err)
 		}
-		parsed.apps = append(parsed.apps, app)
+		parsed.apps = append(parsed.apps, uint32(app))
 	}
 	return parsed
 }
 
 func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
+	mc := memcache.New("10.0.0.1:11211")
 	for {
 		parsed_line, ok := <-data_chan
 		if !ok {
@@ -55,8 +64,11 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
 			done_chan <- true
 			return
 		}
-		fmt.Print("message: ")
-		fmt.Println(parsed_line)
+		key := fmt.Sprintf("%s:%s", parsed_line.dev_type, parsed_line.dev_id)
+		proto_msg := make_protobuf_struct(parsed_line)
+		proto_msg_serialized, err := proto.Marshal(proto_msg)
+		mc.Set(&memcache.Item{Key: key, Value: proto_msg_serialized})
+		fmt.Println(proto_msg)
 	}
 }
 
