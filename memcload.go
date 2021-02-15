@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	//"github.com/golang/protobuf/proto"
-	//"github.com/bradfitz/gomemcache/memcache"
+
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/golang/protobuf/proto"
 )
 
 type ParsedLine struct {
@@ -56,6 +57,7 @@ func parse_line(line string) ParsedLine {
 }
 
 func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
+	// TODO memcache map
 	mc := memcache.New("10.0.0.1:11211")
 	for {
 		parsed_line, ok := <-data_chan
@@ -66,9 +68,11 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
 		}
 		key := fmt.Sprintf("%s:%s", parsed_line.dev_type, parsed_line.dev_id)
 		proto_msg := make_protobuf_struct(parsed_line)
-		proto_msg_serialized, err := proto.Marshal(proto_msg)
+		proto_msg_serialized, err := proto.Marshal(&proto_msg)
+
 		mc.Set(&memcache.Item{Key: key, Value: proto_msg_serialized})
 		fmt.Println(proto_msg)
+		fmt.Println(err)
 	}
 }
 
@@ -103,6 +107,7 @@ func main() {
 	data_chan := make(chan ParsedLine)
 	for i := 0; i < 4; i++ {
 	}
+	// TODO memcache map
 	files, err := filepath.Glob("../data/*.gz")
 	if err != nil {
 		log.Fatal(err)
