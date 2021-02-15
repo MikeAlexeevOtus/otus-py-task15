@@ -71,10 +71,20 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool,
 		key := fmt.Sprintf("%s:%s", parsed_line.dev_type, parsed_line.dev_id)
 		proto_msg := make_protobuf_struct(parsed_line)
 		proto_msg_serialized, err := proto.Marshal(&proto_msg)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-		mc.Set(&memcache.Item{Key: key, Value: proto_msg_serialized})
-		fmt.Println(proto_msg)
-		fmt.Println(err)
+		n_try := 0
+		for {
+			err = mc.Set(&memcache.Item{Key: key, Value: proto_msg_serialized})
+			if err == nil {
+				break
+			} else if n_try > 5 {
+				log.Fatal(err)
+			}
+			n_try++
+		}
 	}
 }
 
@@ -95,7 +105,6 @@ func process_one_file(filepath string, data_chan chan ParsedLine) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		data_chan <- parse_line(line)
-		break
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -104,6 +113,8 @@ func process_one_file(filepath string, data_chan chan ParsedLine) {
 }
 
 func main() {
+	const upload_workers int = 4
+
 	done_chan := make(chan bool)
 	data_chan := make(chan ParsedLine)
 	mc_connections := map[string]*memcache.Client{
@@ -118,14 +129,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < upload_workers; i++ {
 		go upload_message(data_chan, done_chan, mc_connections)
 	}
 	for _, filepath := range files {
 		process_one_file(filepath, data_chan)
 	}
 	close(data_chan)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < upload_workers; i++ {
 		<-done_chan
 	}
 }
