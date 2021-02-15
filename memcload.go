@@ -34,6 +34,9 @@ func parse_line(line string) ParsedLine {
 	var parsed ParsedLine
 	var err error
 	words := strings.Fields(line)
+	if len(words) != 5 {
+		log.Fatal("wrong line structure")
+	}
 	parsed.dev_type = words[0]
 	parsed.dev_id = words[1]
 	parsed.lat, err = strconv.ParseFloat(words[2], 64)
@@ -124,8 +127,7 @@ func main() {
 		"dvid": memcache.New("127.0.0.1:33016"),
 	}
 
-	// TODO read pattern
-	files, err := filepath.Glob("../data/*.gz")
+	files, err := filepath.Glob(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
