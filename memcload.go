@@ -56,9 +56,9 @@ func parse_line(line string) ParsedLine {
 	return parsed
 }
 
-func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
-	// TODO memcache map
-	mc := memcache.New("10.0.0.1:11211")
+func upload_message(data_chan chan ParsedLine, done_chan chan bool,
+	mc_connections map[string]*memcache.Client) {
+
 	for {
 		parsed_line, ok := <-data_chan
 		if !ok {
@@ -66,6 +66,8 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool) {
 			done_chan <- true
 			return
 		}
+
+		mc := mc_connections[parsed_line.dev_type]
 		key := fmt.Sprintf("%s:%s", parsed_line.dev_type, parsed_line.dev_id)
 		proto_msg := make_protobuf_struct(parsed_line)
 		proto_msg_serialized, err := proto.Marshal(&proto_msg)
@@ -102,18 +104,22 @@ func process_one_file(filepath string, data_chan chan ParsedLine) {
 }
 
 func main() {
-	// mc_connections =
 	done_chan := make(chan bool)
 	data_chan := make(chan ParsedLine)
-	for i := 0; i < 4; i++ {
+	mc_connections := map[string]*memcache.Client{
+		"idfa": memcache.New("127.0.0.1:33013"),
+		"gaid": memcache.New("127.0.0.1:33014"),
+		"adid": memcache.New("127.0.0.1:33015"),
+		"dvid": memcache.New("127.0.0.1:33016"),
 	}
-	// TODO memcache map
+
+	// TODO read pattern
 	files, err := filepath.Glob("../data/*.gz")
 	if err != nil {
 		log.Fatal(err)
 	}
 	for i := 0; i < 4; i++ {
-		go upload_message(data_chan, done_chan)
+		go upload_message(data_chan, done_chan, mc_connections)
 	}
 	for _, filepath := range files {
 		process_one_file(filepath, data_chan)
@@ -122,12 +128,4 @@ func main() {
 	for i := 0; i < 4; i++ {
 		<-done_chan
 	}
-
-	// channel with files
-	// goroutine process one file
-	// read gz line by line
-	// parse
-	// make  protobuf struct
-	// send to messages queue
-	// gouroutine uploader
 }
