@@ -14,6 +14,8 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
+const UPLOAD_WORKERS int = 4
+
 type ParsedLine struct {
 	dev_type string
 	dev_id   string
@@ -91,7 +93,10 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool,
 	}
 }
 
-func process_one_file(filepath string, data_chan chan ParsedLine) {
+func process_one_file(filepath string, mc_connections map[string]*memcache.Client) {
+	done_chan := make(chan bool)
+	data_chan := make(chan ParsedLine)
+
 	f, err := os.Open(filepath)
 	if err != nil {
 		log.Fatal(err)
@@ -104,6 +109,10 @@ func process_one_file(filepath string, data_chan chan ParsedLine) {
 	}
 	defer gr.Close()
 
+	for i := 0; i < UPLOAD_WORKERS; i++ {
+		go upload_message(data_chan, done_chan, mc_connections)
+	}
+
 	scanner := bufio.NewScanner(gr)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -113,13 +122,14 @@ func process_one_file(filepath string, data_chan chan ParsedLine) {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+
+	close(data_chan)
+	for i := 0; i < UPLOAD_WORKERS; i++ {
+		<-done_chan
+	}
 }
 
 func main() {
-	const upload_workers int = 4
-
-	done_chan := make(chan bool)
-	data_chan := make(chan ParsedLine)
 	mc_connections := map[string]*memcache.Client{
 		"idfa": memcache.New("127.0.0.1:33013"),
 		"gaid": memcache.New("127.0.0.1:33014"),
@@ -131,14 +141,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for i := 0; i < upload_workers; i++ {
-		go upload_message(data_chan, done_chan, mc_connections)
-	}
+
 	for _, filepath := range files {
-		process_one_file(filepath, data_chan)
-	}
-	close(data_chan)
-	for i := 0; i < upload_workers; i++ {
-		<-done_chan
+		process_one_file(filepath, mc_connections)
 	}
 }
