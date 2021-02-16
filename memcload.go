@@ -26,15 +26,25 @@ type ParsedLine struct {
 
 func make_protobuf_struct(parsed_line ParsedLine) UserApps {
 	var ua UserApps
+
 	ua.Lat = &parsed_line.lat
 	ua.Lon = &parsed_line.lon
 	ua.Apps = parsed_line.apps
 	return ua
 }
 
+func dot_rename(file_path string) {
+	head, fn := filepath.Split(file_path)
+	err := os.Rename(file_path, filepath.Join(head, "."+fn))
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func parse_line(line string) ParsedLine {
 	var parsed ParsedLine
 	var err error
+
 	words := strings.Fields(line)
 	if len(words) != 5 {
 		log.Fatal("wrong line structure")
@@ -93,11 +103,11 @@ func upload_message(data_chan chan ParsedLine, done_chan chan bool,
 	}
 }
 
-func process_one_file(filepath string, mc_connections map[string]*memcache.Client) {
+func process_one_file(file_path string, mc_connections map[string]*memcache.Client) {
 	done_chan := make(chan bool)
 	data_chan := make(chan ParsedLine)
 
-	f, err := os.Open(filepath)
+	f, err := os.Open(file_path)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -127,6 +137,8 @@ func process_one_file(filepath string, mc_connections map[string]*memcache.Clien
 	for i := 0; i < UPLOAD_WORKERS; i++ {
 		<-done_chan
 	}
+
+	dot_rename(file_path)
 }
 
 func main() {
@@ -142,7 +154,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for _, filepath := range files {
-		process_one_file(filepath, mc_connections)
+	for _, file_path := range files {
+		process_one_file(file_path, mc_connections)
 	}
 }
